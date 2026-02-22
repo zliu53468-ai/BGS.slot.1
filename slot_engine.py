@@ -8,8 +8,13 @@ class SlotEngine:
         self.history = deque(maxlen=200)
         self.spin_count = 0
         self.last_bet = 0
+
         self.max_bet_ratio = 0.03
         self.risk_ratio = 0.02
+
+        # ===== 新增探測期 =====
+        self.probe_spins = 20   # 前20轉為探測期
+        self.probe_ratio = 0.01 # 探測期固定1%
 
     def add_spin(self, bet, win):
         self.spin_count += 1
@@ -36,25 +41,34 @@ class SlotEngine:
         return min(raw_bet, max_allowed, balance_limit)
 
     def next_action(self):
+
+        # ===== 探測期 =====
+        if self.spin_count < self.probe_spins:
+            bet = self.bankroll * self.probe_ratio
+            return round(bet, 2), self.probe_spins - self.spin_count, "探測期（固定1%）"
+
         rtp_score = self.weighted_rtp()
         base_bet = self.bankroll * self.risk_ratio
 
-        if rtp_score > 1.15:
-            base_bet *= 1.5
-            mode = "熱機放大"
-            spins = 40
-        elif rtp_score < 0.75:
-            base_bet *= 0.7
-            mode = "冷機保守"
+        # ===== 加入平滑機制避免剛回補就暴力加碼 =====
+        if rtp_score > 1.2:
+            base_bet *= 1.2
+            mode = "溫和放大"
+            spins = 30
+        elif rtp_score < 0.7:
+            base_bet *= 0.8
+            mode = "保守模式"
             spins = 20
         else:
             mode = "穩定區"
-            spins = 30
+            spins = 25
 
         final_bet = self.risk_control_bet(base_bet)
+
         return round(final_bet, 2), spins, mode
 
     def analyze(self):
+
         rtp_score = round(self.weighted_rtp(), 3)
         next_bet, spins, mode = self.next_action()
 
