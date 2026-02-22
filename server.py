@@ -7,10 +7,7 @@ from linebot.models import (
     TextSendMessage,
     MessageEvent,
     TextMessage,
-    FollowEvent,
-    QuickReply,
-    QuickReplyButton,
-    MessageAction
+    FollowEvent
 )
 from slot_engine import SlotEngine
 
@@ -152,10 +149,9 @@ def handle_message(event):
         )
         return
 
-    # ===== 分析輸入（只接收 兩個數值）=====
+    # ===== 分析輸入 =====
     try:
         bet, win = user_msg.split()
-
         bet = float(bet)
         win = float(win)
 
