@@ -31,10 +31,8 @@ app = FastAPI()
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# 每位使用者獨立分析引擎
 user_engines = {}
 
-# 遊戲館分類
 GAMES = {
     "1": "RSG 雷神之鎚 V1",
     "2": "RSG 雷神之鎚 V2",
@@ -54,7 +52,7 @@ def home():
     return {"status": "slot analysis bot running"}
 
 # =============================
-# Webhook（穩定版，不再 400）
+# Webhook
 # =============================
 
 @app.post("/webhook")
@@ -63,11 +61,9 @@ async def webhook(req: Request):
     signature = req.headers.get("X-Line-Signature")
     body_text = body.decode("utf-8")
 
-    # LINE Verify 會送 {"events":[]}
     if body_text == '{"events":[]}':
         return "OK"
 
-    # 沒有 signature 也回 200（避免 400）
     if not signature:
         return "OK"
 
@@ -75,29 +71,26 @@ async def webhook(req: Request):
         handler.handle(body_text, signature)
     except InvalidSignatureError:
         print("Invalid Signature")
-        return "OK"
     except Exception as e:
         print("Webhook Error:", str(e))
-        return "OK"
 
     return "OK"
 
 # =============================
-# Follow 事件
+# Follow
 # =============================
 
 @handler.add(FollowEvent)
 def handle_follow(event):
     welcome_text = (
         "🎰 歡迎使用老虎機數據分析系統 🎰\n\n"
-        "本系統僅提供統計分析與數據觀察。\n\n"
         "📘 使用步驟：\n"
         "1️⃣ 輸入 start 開啟選單\n"
         "2️⃣ 選擇遊戲編號\n"
-        "3️⃣ 每一轉輸入：下注,贏分,是否BONUS\n\n"
+        "3️⃣ 每一轉輸入：下注 贏分 是否BONUS\n\n"
         "範例：\n"
-        "10,0,0\n"
-        "10,120,1"
+        "10 0 0\n"
+        "10 120 1"
     )
 
     line_bot_api.reply_message(
@@ -106,7 +99,7 @@ def handle_follow(event):
     )
 
 # =============================
-# 訊息事件
+# 訊息處理
 # =============================
 
 @handler.add(MessageEvent, message=TextMessage)
@@ -114,13 +107,12 @@ def handle_message(event):
     user_id = event.source.user_id
     user_msg = event.message.text.strip()
 
-    # 初始化使用者引擎
     if user_id not in user_engines:
-        user_engines[user_id] = SlotEngine()
+        user_engines[user_id] = SlotEngine(bankroll=10000)
 
     engine = user_engines[user_id]
 
-    # ===== start 選單 =====
+    # ===== start =====
     if user_msg.lower() == "start":
         menu = "🎮 請選擇遊戲：\n\n"
         for k, v in GAMES.items():
@@ -132,7 +124,7 @@ def handle_message(event):
         )
         return
 
-    # ===== 選擇遊戲 =====
+    # ===== 選遊戲 =====
     if user_msg in GAMES:
         line_bot_api.reply_message(
             event.reply_token,
@@ -142,9 +134,9 @@ def handle_message(event):
         )
         return
 
-    # ===== 分析輸入 =====
+    # ===== 分析輸入（改為空格分隔）=====
     try:
-        bet, win, bonus = user_msg.split(",")
+        bet, win, bonus = user_msg.split()
 
         bet = float(bet)
         win = float(win)
@@ -155,18 +147,21 @@ def handle_message(event):
 
         reply = (
             f"📊 數據分析結果\n\n"
-            f"總轉數：{result['total_spins']}\n"
-            f"RTP30：{result['rtp30']}\n"
-            f"RTP50：{result['rtp50']}\n"
-            f"RTP100：{result['rtp100']}\n\n"
-            f"BONUS間距：{result['bonus_gap']} 轉\n"
-            f"大獎密度：{result['big_win_density']}"
+            f"🎯 總轉數：{result['total_spins']}\n"
+            f"💰 當前餘額：{result['balance']}\n"
+            f"📈 RTP：{result['rtp']}\n"
+            f"🌊 波動：{result['volatility']}\n"
+            f"🎁 BONUS間距：{result['bonus_gap']} 轉\n\n"
+            f"🔥 模式：{result['mode']}\n"
+            f"➡ 建議下注：{result['next_bet']}\n"
+            f"➡ 建議轉數：{result['next_spins']}\n"
+            f"{result['stop']}"
         )
 
     except Exception:
         reply = (
-            "⚠️ 格式錯誤，請輸入：下注,贏分,是否BONUS\n"
-            "例如：10,0,0"
+            "⚠️ 格式錯誤，請輸入：下注 贏分 是否BONUS\n"
+            "例如：10 0 0"
         )
 
     line_bot_api.reply_message(
@@ -175,7 +170,7 @@ def handle_message(event):
     )
 
 # =============================
-# 本地啟動（Render 可用）
+# 本地啟動
 # =============================
 
 if __name__ == "__main__":
