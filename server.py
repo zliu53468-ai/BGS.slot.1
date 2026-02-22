@@ -1,6 +1,6 @@
 import os
 import sys
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
@@ -12,7 +12,7 @@ from linebot.models import (
 from slot_engine import SlotEngine
 
 # =============================
-# 環境變數
+# 環境變數讀取
 # =============================
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -27,6 +27,7 @@ if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
 # =============================
 
 app = FastAPI()
+
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -53,7 +54,7 @@ def home():
     return {"status": "slot analysis bot running"}
 
 # =============================
-# Webhook（穩定版）
+# Webhook（穩定版，不再 400）
 # =============================
 
 @app.post("/webhook")
@@ -62,17 +63,19 @@ async def webhook(req: Request):
     signature = req.headers.get("X-Line-Signature")
     body_text = body.decode("utf-8")
 
-    # 🔥 LINE Verify 會送空 events
+    # LINE Verify 會送 {"events":[]}
     if body_text == '{"events":[]}':
         return "OK"
 
+    # 沒有 signature 也回 200（避免 400）
     if not signature:
-        raise HTTPException(status_code=400, detail="Missing Signature")
+        return "OK"
 
     try:
         handler.handle(body_text, signature)
     except InvalidSignatureError:
-        raise HTTPException(status_code=400, detail="Invalid Signature")
+        print("Invalid Signature")
+        return "OK"
     except Exception as e:
         print("Webhook Error:", str(e))
         return "OK"
@@ -134,7 +137,7 @@ def handle_message(event):
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(
-                text=f"✅ 已選擇：{GAMES[user_msg]}\n請開始輸入數據"
+                text=f"已選擇：{GAMES[user_msg]}\n請開始輸入數據"
             )
         )
         return
@@ -172,7 +175,7 @@ def handle_message(event):
     )
 
 # =============================
-# 本地啟動
+# 本地啟動（Render 可用）
 # =============================
 
 if __name__ == "__main__":
