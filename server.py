@@ -107,7 +107,13 @@ def handle_follow(event):
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
+
+    # ===== 修正 user_id 為 None 問題 =====
     user_id = event.source.user_id
+    if not user_id:
+        print("No user_id detected")
+        return
+
     user_msg = event.message.text.strip()
 
     # ===== 結束分析 =====
@@ -120,25 +126,35 @@ def handle_message(event):
         )
         return
 
-    # ===== 設定本金 =====
-    if user_msg.startswith("本金"):
-        try:
-            _, amount = user_msg.split()
-            bankroll = float(amount)
-            user_engines[user_id] = SlotEngine(bankroll=bankroll)
-
-            reply = f"💰 本金設定完成：{bankroll}\n請輸入 start 開始分析"
-        except:
-            reply = "⚠️ 格式錯誤，例如：本金 10000"
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=reply)
-        )
-        return
-
-    # ===== 尚未設定本金 =====
+    # ===== 設定本金（強化版）=====
     if user_id not in user_engines:
+
+        try:
+            bankroll = None
+
+            # 支援：本金 10000
+            if user_msg.startswith("本金"):
+                amount = user_msg.replace("本金", "").strip()
+                bankroll = float(amount)
+
+            # 支援：第一次直接輸入數字 10000
+            elif user_msg.replace(".", "", 1).isdigit():
+                bankroll = float(user_msg)
+
+            if bankroll is not None:
+                user_engines[user_id] = SlotEngine(bankroll=bankroll)
+
+                reply = f"💰 本金設定完成：{bankroll}\n請輸入 start 開始分析"
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text=reply)
+                )
+                return
+
+        except Exception as e:
+            print("本金設定錯誤:", e)
+
+        # 還沒成功設定本金
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text="⚠️ 請先設定本金，例如：本金 10000")
