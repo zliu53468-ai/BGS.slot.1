@@ -7,7 +7,10 @@ from linebot.models import (
     TextSendMessage,
     MessageEvent,
     TextMessage,
-    FollowEvent
+    FollowEvent,
+    QuickReply,
+    QuickReplyButton,
+    MessageAction
 )
 from slot_engine import SlotEngine
 
@@ -77,25 +80,28 @@ async def webhook(req: Request):
     return "OK"
 
 # =============================
-# Follow
+# Follow（加入按鈕）
 # =============================
 
 @handler.add(FollowEvent)
 def handle_follow(event):
     welcome_text = (
         "🎰 歡迎使用老虎機數據分析系統 🎰\n\n"
-        "📘 使用步驟：\n"
-        "1️⃣ 輸入 start 開啟選單\n"
-        "2️⃣ 選擇遊戲編號\n"
-        "3️⃣ 每一轉輸入：下注 贏分 是否BONUS\n\n"
-        "範例：\n"
-        "10 0 0\n"
-        "10 120 1"
+        "請點擊下方按鈕開始使用"
     )
+
+    quick_reply = QuickReply(items=[
+        QuickReplyButton(
+            action=MessageAction(label="開始使用 🎮", text="start")
+        )
+    ])
 
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text=welcome_text)
+        TextSendMessage(
+            text=welcome_text,
+            quick_reply=quick_reply
+        )
     )
 
 # =============================
@@ -134,7 +140,7 @@ def handle_message(event):
         )
         return
 
-    # ===== 分析輸入（改為空格分隔）=====
+    # ===== 分析輸入 =====
     try:
         bet, win, bonus = user_msg.split()
 
