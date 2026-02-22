@@ -2,59 +2,36 @@ from collections import deque
 import numpy as np
 
 class SlotEngine:
-    def __init__(self, window=200):
-        self.history = deque(maxlen=window)
+    def __init__(self, bankroll):
+        self.bankroll = bankroll
+        self.balance = bankroll
+        self.history = deque(maxlen=200)
         self.spin_count = 0
         self.last_bonus_spin = 0
-        self.last_bet = 10
-        self.big_wins = deque(maxlen=100)
+        self.last_bet = 0
+        self.max_bet_ratio = 0.03   # 單注最多3%本金
+        self.risk_ratio = 0.02      # 建議基礎2%
 
     def add_spin(self, bet, win, is_bonus):
         self.spin_count += 1
-        self.history.append((bet, win))
         self.last_bet = bet
+        self.balance = self.balance - bet + win
+        self.history.append((bet, win))
 
         if is_bonus:
             self.last_bonus_spin = self.spin_count
 
-        if bet > 0 and win / bet >= 20:
-            self.big_wins.append(1)
-        else:
-            self.big_wins.append(0)
-
-    # ===== 基礎RTP =====
     def rtp(self, n):
         data = list(self.history)[-n:]
         total_bet = sum(b for b, _ in data)
         total_win = sum(w for _, w in data)
-        if total_bet == 0:
-            return 0
-        return total_win / total_bet
+        return total_win / total_bet if total_bet > 0 else 0
 
-    # ===== EMA 平滑 =====
-    def ema_rtp(self, alpha=0.2):
-        rtp_values = []
-        for bet, win in self.history:
-            if bet > 0:
-                rtp_values.append(win / bet)
-        if not rtp_values:
-            return 0
-
-        ema = rtp_values[0]
-        for val in rtp_values[1:]:
-            ema = alpha * val + (1 - alpha) * ema
-        return ema
-
-    # ===== 加權RTP模型 =====
     def weighted_rtp(self):
-        rtp10 = self.rtp(10)
-        rtp30 = self.rtp(30)
-        rtp50 = self.rtp(50)
-
         return (
-            rtp10 * 0.5 +
-            rtp30 * 0.3 +
-            rtp50 * 0.2
+            self.rtp(10) * 0.5 +
+            self.rtp(30) * 0.3 +
+            self.rtp(50) * 0.2
         )
 
     def volatility(self):
@@ -62,47 +39,64 @@ class SlotEngine:
         for bet, win in list(self.history)[-50:]:
             if bet > 0:
                 returns.append(win / bet)
-        if len(returns) < 2:
-            return 0
-        return np.std(returns)
+        return np.std(returns) if len(returns) > 1 else 0
 
-    def bonus_gap(self):
-        return self.spin_count - self.last_bonus_spin
+    def risk_control_bet(self, raw_bet):
+        max_allowed = self.bankroll * self.max_bet_ratio
+        balance_limit = self.balance * 0.05
+        return min(raw_bet, max_allowed, balance_limit)
 
-    # ===== 策略判斷 =====
-    def next_action(self, rtp_score, vol, gap):
-        base = self.last_bet
+    def next_action(self):
+        rtp_score = self.weighted_rtp()
+        vol = self.volatility()
 
-        # 高波動 → 保守
-        if vol > 3:
-            return base * 0.7, 20, "高波動保守"
+        base_bet = self.bankroll * self.risk_ratio
 
         # 熱機
         if rtp_score > 1.15:
-            return base * 1.5, 40, "熱機放大"
+            base_bet *= 1.5
+            mode = "熱機放大"
+            spins = 40
 
         # 冷機
-        if rtp_score < 0.75:
-            return base * 0.5, 20, "冷機觀察"
+        elif rtp_score < 0.75:
+            base_bet *= 0.7
+            mode = "冷機保守"
+            spins = 20
 
-        # 正常
-        return base, 30, "穩定區"
+        else:
+            mode = "穩定區"
+            spins = 30
+
+        if vol > 3:
+            base_bet *= 0.7
+            mode += "｜高波動降風險"
+
+        final_bet = self.risk_control_bet(base_bet)
+
+        return round(final_bet, 2), spins, mode
 
     def analyze(self):
-        rtp_score = self.weighted_rtp()
-        ema = self.ema_rtp()
-        vol = self.volatility()
-        gap = self.bonus_gap()
+        rtp_score = round(self.weighted_rtp(), 3)
+        vol = round(self.volatility(), 3)
+        gap = self.spin_count - self.last_bonus_spin
 
-        next_bet, spins, mode = self.next_action(rtp_score, vol, gap)
+        next_bet, spins, mode = self.next_action()
+
+        stop = ""
+        if self.balance <= self.bankroll * 0.5:
+            stop = "⚠ 已達50%止損"
+        elif self.balance >= self.bankroll * 1.5:
+            stop = "🎉 已達50%止盈"
 
         return {
             "total_spins": self.spin_count,
-            "rtp_score": round(rtp_score, 3),
-            "ema_rtp": round(ema, 3),
-            "volatility": round(vol, 3),
+            "balance": round(self.balance, 2),
+            "rtp": rtp_score,
+            "volatility": vol,
             "bonus_gap": gap,
-            "next_bet": round(next_bet, 2),
+            "next_bet": next_bet,
             "next_spins": spins,
-            "mode": mode
+            "mode": mode,
+            "stop": stop
         }
