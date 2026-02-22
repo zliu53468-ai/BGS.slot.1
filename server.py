@@ -30,7 +30,6 @@ if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
 # =============================
 
 app = FastAPI()
-
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -80,14 +79,15 @@ async def webhook(req: Request):
     return "OK"
 
 # =============================
-# Follow（加入按鈕）
+# Follow
 # =============================
 
 @handler.add(FollowEvent)
 def handle_follow(event):
     welcome_text = (
         "🎰 歡迎使用老虎機數據分析系統 🎰\n\n"
-        "請點擊下方按鈕開始使用"
+        "請先設定本金：\n"
+        "例如：本金 10000"
     )
 
     quick_reply = QuickReply(items=[
@@ -98,10 +98,7 @@ def handle_follow(event):
 
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(
-            text=welcome_text,
-            quick_reply=quick_reply
-        )
+        TextSendMessage(text=welcome_text, quick_reply=quick_reply)
     )
 
 # =============================
@@ -113,8 +110,40 @@ def handle_message(event):
     user_id = event.source.user_id
     user_msg = event.message.text.strip()
 
+    # ===== 結束分析 =====
+    if user_msg == "結束分析":
+        if user_id in user_engines:
+            del user_engines[user_id]
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="✅ 已結束分析，模型已停止。\n如需重新開始請輸入：本金 10000")
+        )
+        return
+
+    # ===== 設定本金 =====
+    if user_msg.startswith("本金"):
+        try:
+            _, amount = user_msg.split()
+            bankroll = float(amount)
+            user_engines[user_id] = SlotEngine(bankroll=bankroll)
+
+            reply = f"💰 本金設定完成：{bankroll}\n請輸入 start 開始分析"
+        except:
+            reply = "⚠️ 格式錯誤，例如：本金 10000"
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply)
+        )
+        return
+
+    # ===== 尚未設定本金 =====
     if user_id not in user_engines:
-        user_engines[user_id] = SlotEngine(bankroll=10000)
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="⚠️ 請先設定本金，例如：本金 10000")
+        )
+        return
 
     engine = user_engines[user_id]
 
@@ -151,6 +180,12 @@ def handle_message(event):
         engine.add_spin(bet, win, bonus)
         result = engine.analyze()
 
+        quick_reply = QuickReply(items=[
+            QuickReplyButton(
+                action=MessageAction(label="結束分析 ❌", text="結束分析")
+            )
+        ])
+
         reply = (
             f"📊 數據分析結果\n\n"
             f"🎯 總轉數：{result['total_spins']}\n"
@@ -164,16 +199,18 @@ def handle_message(event):
             f"{result['stop']}"
         )
 
-    except Exception:
-        reply = (
-            "⚠️ 格式錯誤，請輸入：下注 贏分 是否BONUS\n"
-            "例如：10 0 0"
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply, quick_reply=quick_reply)
         )
 
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply)
-    )
+    except Exception:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(
+                text="⚠️ 格式錯誤，請輸入：下注 贏分 是否BONUS\n例如：10 0 0"
+            )
+        )
 
 # =============================
 # 本地啟動
